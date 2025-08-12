@@ -1,101 +1,95 @@
+from decimal import Decimal
 from fastapi import FastAPI, Depends, HTTPException
 from tortoise.contrib.fastapi import register_tortoise
-from schemas import ESFCreate, ESFOut
+from schemas import ApiResponse, InvoiceData
 from models import ESFModel
 from deps import get_current_user_from_auth_service
 import httpx
 import os
+from urllib.parse import urljoin
+
 
 app = FastAPI(title="ESF Service")
 
-GNS_PROXY = os.getenv("GNS_PROXY", "http://gns-proxy:8003/gns/receive")
-X_ROAD = os.getenv("X-Road-Client", "-")
-ClientUUID = os.getenv("ClientUUID", "-")
-Authorization = os.getenv("Authorization", "-")
-TIN = os.getenv("USER-TIN", "-")
 
-@app.post("/esf/", response_model=ESFOut)
-async def create_esf(payload: ESFCreate, user=Depends(get_current_user_from_auth_service)):
-    catalog_entries = [entry.dict() for entry in payload.catalogEntries] if payload.catalogEntries else []
-    doc = await ESFModel.create(
-        legal_person_tin=TIN,
-        foreignName=payload.foreignName,
-        isBranchDataSent=payload.isBranchDataSent,
-        isPriceWithoutTaxes=payload.isPriceWithoutTaxes,
-        affiliateTin=payload.affiliateTin,
-        isIndustry=payload.isIndustry,
-        ownedCrmReceiptCode=payload.ownedCrmReceiptCode,
-        operationTypeCode=payload.operationTypeCode,
-        deliveryDate=payload.deliveryDate,
-        deliveryTypeCode=payload.deliveryTypeCode,
-        isResident=payload.isResident,
-        contractorTin=payload.contractorTin,
-        supplierBankAccount=payload.supplierBankAccount,
-        contractorBankAccount=payload.contractorBankAccount,
-        currencyCode=payload.currencyCode,
-        countryCode=payload.countryCode,
-        currencyRate=payload.currencyRate,
-        totalCurrencyValue=payload.totalCurrencyValue,
-        totalCurrencyValueWithoutTaxes=payload.totalCurrencyValueWithoutTaxes,
-        supplyContractNumber=payload.supplyContractNumber,
-        contractStartDate=payload.contractStartDate,
-        comment=payload.comment,
-        deliveryCode=payload.deliveryCode,
-        paymentCode=payload.paymentCode,
-        taxRateVATCode=payload.taxRateVATCode,
-        catalogEntries=catalog_entries,
-        openingBalances=payload.openingBalances,
-        assessedContributionsAmount=payload.assessedContributionsAmount,
-        paidAmount=payload.paidAmount,
-        penaltiesAmount=payload.penaltiesAmount,
-        finesAmount=payload.finesAmount,
-        closingBalances=payload.closingBalances,
-        amountToBePaid=payload.amountToBePaid,
-        personalAccountNumber=payload.personalAccountNumber,
-        status="draft",
-        created_by=user["id"]
-    )
-    return ESFOut.from_orm(doc)
+GNS_PROXY = os.getenv("GNS_PROXY")
+X_ROAD = os.getenv("X-Road-Client")
+ClientUUID = os.getenv("ClientUUID")
+Authorization = os.getenv("Authorization")
+TIN = os.getenv("USER-TIN")
+CREATE_PATH = os.getenv("CREATE_PATH")
+GET_PATH = os.getenv("GET_PATH")
 
-@app.get("/esf/", response_model=list[ESFOut])
-async def list_esf():
-    docs = await ESFModel.all().order_by("-created_at")
-    return [ESFOut.from_orm(d) for d in docs]
+create_url = urljoin(GNS_PROXY, CREATE_PATH)
+get_url = urljoin(GNS_PROXY, GET_PATH)
 
-@app.get("/esf/{item_id}", response_model=ESFOut)
-async def get_esf(item_id: int):
-    doc = await ESFModel.get_or_none(id=item_id)
-    if not doc:
-        raise HTTPException(404, "Not found")
-    return ESFOut.from_orm(doc)
 
-@app.post("/esf/{item_id}/send")
-async def send_esf(item_id: int):
-    doc = await ESFModel.get_or_none(id=item_id)
-    if not doc:
-        raise HTTPException(404, "Not found")
-    # отправляем в GNS
+@app.post("/process_invoice/", response_model=ApiResponse)
+async def process_invoice_data(data: InvoiceData):
+    """
+    Этот эндпоинт принимает данные, отправляет их на внешний сервис
+    и возвращает ответ от него.
+
+    - **Принимает**: JSON объект со структурой `InvoiceData`.
+    - **Проксирует**: POST-запрос на http://172.16.0.3:8003/
+    - **Возвращает**: Ответ от внешнего сервиса.
+    """
+    headers = {
+        "X-Road-Client": X_ROAD,
+        "ClientUUID": ClientUUID,
+        "Authorization": Authorization,
+        "USER-TIN": TIN,
+        "Content-Type": "application/json"
+    }
     async with httpx.AsyncClient() as client:
         try:
-            resp = await client.post(GNS_PROXY, json={
-                "document_uuid": doc.document_uuid,
-                "legal_person_tin": doc.legal_person_tin,
-                "data": doc.data
-            }, timeout=10.0)
-            resp.raise_for_status()
-        except Exception as e:
-            doc.status = "failed"
-            await doc.save()
-            raise HTTPException(502, f"Failed to send to GNS: {e}")
-    # если успешно
-    doc.status = "sent"
-    await doc.save()
-    return {"status": "sent"}
+            response = await client.post(create_url, json=data.model_dump(mode='json'), headers=headers)
+            response.raise_for_status()
 
-register_tortoise(
-    app,
-    db_url="postgres://postgres:postgres@postgres:5432/esf_db",
-    modules={"models": ["models"]},
-    generate_schemas=True,
-    add_exception_handlers=True,
-)
+            return response.json()
+
+        except httpx.RequestError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Ошибка при обращении к внешнему сервису: {exc}"
+            )
+        except httpx.HTTPStatusError as exc:
+            raise HTTPException(
+                status_code=exc.response.status_code,
+                detail=f"Внешний сервис вернул ошибку: {exc.response.text}"
+            )
+
+
+@app.get("/get_invoices/")
+async def get_invoices():
+    """
+    Этот эндпоинт получает список всех документов по реализации.
+
+    - **Проксирует**: GET-запрос
+    - **Возвращает**: Список документов в формате JSON.
+    """
+    headers = {
+        "X-Road-Client": X_ROAD,
+        "ClientUUID": ClientUUID,
+        "Authorization": Authorization,
+        "USER-TIN": TIN,
+        "Content-Type": "application/json"
+    }
+    print(f"GET URL: {get_url}")
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(get_url, headers=headers, params={"exchangeCode": "d215a809-d2f7-4944-be0a-a15a1fdeaff8"})
+            response.raise_for_status()
+
+            return response.json()
+
+        except httpx.RequestError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Ошибка при обращении к внешнему сервису: {exc}"
+            )
+        except httpx.HTTPStatusError as exc:
+            raise HTTPException(
+                status_code=exc.response.status_code,
+                detail=f"Внешний сервис вернул ошибку: {exc.response.text}"
+            )
