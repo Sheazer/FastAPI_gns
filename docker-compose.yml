@@ -20,6 +20,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    env_file:
+      - ./auth-service/.env 
+    volumes:
+      - ./auth-service:/app
     environment:
       - DATABASE_URL=postgres://postgres:postgres@postgres:5432/esf_db
     ports:
@@ -30,9 +34,12 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    env_file:
+      - ./esf-service/.env 
+    volumes:
+      - ./esf-service:/app
     environment:
       - DATABASE_URL=postgres://postgres:postgres@postgres:5432/esf_db
-      - GNS_PROXY=http://gns-proxy:8003/gns/receive
       - AUTH_SERVICE=http://auth-service:8001
     ports:
       - "8002:8002"

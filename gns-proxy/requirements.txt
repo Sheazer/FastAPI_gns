@@ -1,8 +1,17 @@
-fastapi==0.95.2
-uvicorn[standard]==0.22.0
-tortoise-orm==0.19.3
-asyncpg==0.27.0
+
+# Ядро и веб-сервер
+fastapi==0.111.0
+pydantic==2.8.2
+uvicorn[standard]==0.30.1
+
+# База данных (ORM)
+tortoise-orm==0.21.2
+asyncpg==0.29.0
+
+# Аутентификация
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
-httpx==0.24.0
-python-dotenv==1.0.0
+
+# Утилиты
+httpx==0.27.0
+python-dotenv==1.0.1
