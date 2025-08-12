@@ -1,3 +1,4 @@
+from uuid import UUID
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 from typing import List, Optional
@@ -70,6 +71,87 @@ class ApiResponse(BaseModel):
     responseId: str
     documentUuid: str
 
+class CodeName(BaseModel):
+    code: Optional[str]
+    name: Optional[str]
 
+class LegalPersonSchema(BaseModel):
+    pin: Optional[str]
+    fullName: Optional[str]
+    mainFullName: Optional[str]
+    mainPin: Optional[str]
 
+class ContractorSchema(BaseModel):
+    pin: Optional[str]
+    fullName: Optional[str]
+    mainFullName: Optional[str]
+    mainPin: Optional[str]
 
+class VatTaxTypeSchema(BaseModel):
+    rate: Optional[Decimal]
+    name: Optional[str]
+    code: Optional[str]
+
+class InvoiceSchema(BaseModel):
+    documentUuid: UUID
+    totalAmount: float
+    createdDate: Optional[date]
+    deliveryDate: Optional[date]
+    invoiceDate: Optional[date]
+    ownedCrmReceiptCode: Optional[str]
+    invoiceNumber: Optional[str]
+    number: Optional[str]
+    note: Optional[str]
+    correctedReceiptUuid: Optional[str]
+    isResident: Optional[str]
+
+    paymentType: Optional[CodeName]
+    currency: Optional[CodeName]
+    status: Optional[CodeName]
+    receiptType: Optional[CodeName]
+    deliveryType: Optional[CodeName]
+    legalPerson: Optional[LegalPersonSchema]
+    contractor: Optional[ContractorSchema]
+    vatTaxType: Optional[VatTaxTypeSchema]
+
+class InvoicesResponse(BaseModel):
+    invoices: list[InvoiceSchema]
+    totalElements: int
+    totalPage: int
+
+class InvoiceOut(BaseModel):
+    id: int
+    documentUuid: UUID
+    totalAmount: Optional[float]
+    createdDate: Optional[date]
+    deliveryDate: Optional[date]
+    note: Optional[str]
+
+    class Config:
+        orm_mode = True
+
+class InvoiceDetailOut(BaseModel):
+    id: int
+    documentUuid: UUID
+    totalAmount: Decimal
+    createdDate: Optional[date]
+    deliveryDate: Optional[date]
+    invoiceDate: Optional[date]
+    ownedCrmReceiptCode: Optional[str]
+    invoiceNumber: Optional[str]
+    number: Optional[str]
+    note: Optional[str]
+    correctedReceiptUuid: Optional[str]
+    isResident: Optional[bool]
+
+    paymentType: Optional[CodeName]
+    currency: Optional[CodeName]
+    status: Optional[CodeName]
+    receiptType: Optional[CodeName]
+    deliveryType: Optional[CodeName]
+    legalPerson: Optional[LegalPersonSchema]
+    contractor: Optional[ContractorSchema]
+    vatTaxType: Optional[VatTaxTypeSchema]
+
+    class Config:
+        orm_mode = True
